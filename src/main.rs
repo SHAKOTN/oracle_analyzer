@@ -1,6 +1,11 @@
+#[macro_use]
+extern crate log;
+
+use std::error::Error;
+
 use csv::Writer;
 use dotenv::dotenv;
-use std::error::Error;
+use tokio::task;
 use web3::contract::{Contract, Options};
 use web3::types::{Address, U256};
 
@@ -10,6 +15,7 @@ mod helpers;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
+    env_logger::init();
     let web3 = helpers::get_web3(std::env::var("ETHNODEURL").expect("ETHNODEURL must be set."));
     // TODO: Candidate for concurrent approach
     for (oracle_name, address_str) in constants::ORACLE_ADDRESSES.into_iter() {
@@ -23,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "updatedAt",
             "answeredInRound",
         ])?;
-        println!("Fetching Oracle data for {}", oracle_name);
+        info!("Fetching Oracle data for {}", oracle_name);
         let oracle_address: Address = address_str.parse().unwrap();
         // Instantiate the contract
         let contract = Contract::from_json(
@@ -31,12 +37,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             oracle_address,
             include_bytes!("./res/AggregatorCL.json"),
         )
-        .unwrap();
-        // Fetch the data from the Oracle
-        let round_data: (U256, U256, U256, U256, U256) = contract
-            .query("latestRoundData", (), None, Options::default(), None)
-            .await
             .unwrap();
+        // Fetch the data from the Oracle
+        let future = async move {
+            return contract
+                .query("latestRoundData", (), None, Options::default(), None)
+                .await
+                .unwrap();
+        };
+        let round_data: (U256, U256, U256, U256, U256) = task::spawn(future).await?;
         // Write latest round data to .csv file
         writer.write_record(&[
             round_data.0.to_string(),
