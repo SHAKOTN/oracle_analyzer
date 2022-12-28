@@ -1,18 +1,26 @@
+mod helpers;
+
+use dotenv::dotenv;
+use web3::contract::{Contract, Options};
+use web3::types::{Address, U256};
+
 #[tokio::main]
 async fn main() -> web3::Result<()> {
-    let transport = web3::transports::Http::new("http://localhost:8545")?;
-    let web3 = web3::Web3::new(transport);
-
-    println!("Calling accounts.");
-    let mut accounts = web3.eth().accounts().await?;
-    println!("Accounts: {:?}", accounts);
-    accounts.push("00a329c0648769a73afac7f9381e08fb43dbea72".parse().unwrap());
-
-    println!("Calling balance.");
-    for account in accounts {
-        let balance = web3.eth().balance(account, None).await?;
-        println!("Balance of {:?}: {}", account, balance);
-    }
-
+    dotenv().ok();
+    let web3 = helpers::get_web3(std::env::var("ETHNODEURL").expect("ETHNODEURL must be set."));
+    let oracle_address: Address = "0xdeb288F737066589598e9214E782fa5A8eD689e8"
+        .parse()
+        .unwrap();
+    let contract = Contract::from_json(
+        web3.eth(),
+        oracle_address,
+        include_bytes!("./res/AggregatorCL.json"),
+    )
+    .unwrap();
+    let round_data: (U256, U256, U256, U256, U256) = contract
+        .query("latestRoundData", (), None, Options::default(), None)
+        .await
+        .unwrap();
+    println!("{}", round_data.1);
     Ok(())
 }
