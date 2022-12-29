@@ -4,6 +4,7 @@ extern crate log;
 use csv::Writer;
 use dotenv::dotenv;
 use std::error::Error as StdError;
+use std::iter::successors;
 use tokio::join;
 use web3::contract::{Contract, Error, Options};
 use web3::transports::Http;
@@ -52,8 +53,14 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             round_data.4.to_string(),
         ])?;
         writer.flush()?;
+        let upper_bond = round_data.0 - 1;
+        let upper_bond_usize: usize = upper_bond.as_u128() as usize;
+        // Generate how many rounds we want to fetch data for
+        let numbers: Vec<U256> = successors(Some(round_data.0 - 10000), |n| Some(n + 1))
+            .take(upper_bond_usize)
+            .collect();
         let latest_round = U256::from(round_data.0 - 1);
-        let (prev_round_result,) = join!(get_round_data(latest_round, contract));
+        let (prev_round_result,) = join!(get_round_data(&latest_round, &contract));
         match prev_round_result {
             Ok(value) => {
                 info!("Fetched result succesfully!");
@@ -77,11 +84,11 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
 /// Async get round data by number
 async fn get_round_data(
-    round_number: U256,
-    contract: Contract<Http>,
+    round_number: &U256,
+    contract: &Contract<Http>,
 ) -> Result<(U256, U256, U256, U256, U256), Error> {
     let round_data: Result<(U256, U256, U256, U256, U256), Error> = contract
-        .query("getRoundData", round_number, None, Options::default(), None)
+        .query("getRoundData", *round_number, None, Options::default(), None)
         .await;
     match round_data {
         Ok(round_data) => {
