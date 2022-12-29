@@ -4,7 +4,7 @@ extern crate log;
 use csv::Writer;
 use dotenv::dotenv;
 use std::error::Error as StdError;
-use tokio::task;
+use tokio::join;
 use web3::contract::{Contract, Error, Options};
 use web3::transports::Http;
 use web3::types::{Address, U256};
@@ -52,19 +52,25 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             round_data.4.to_string(),
         ])?;
         writer.flush()?;
-        // TODO: Get previous round data
         let latest_round = U256::from(round_data.0 - 1);
-        let prev_round_data = task::spawn(get_round_data(latest_round, contract))
-            .await?
-            .unwrap();
-        writer.write_record(&[
-            prev_round_data.0.to_string(),
-            prev_round_data.1.to_string(),
-            prev_round_data.2.to_string(),
-            prev_round_data.3.to_string(),
-            prev_round_data.4.to_string(),
-        ])?;
-        writer.flush()?;
+        let (prev_round_result,) = join!(get_round_data(latest_round, contract));
+        match prev_round_result {
+            Ok(value) => {
+                info!("Fetched result succesfully!");
+                writer.write_record(&[
+                    value.0.to_string(),
+                    value.1.to_string(),
+                    value.2.to_string(),
+                    value.3.to_string(),
+                    value.4.to_string(),
+                ])?;
+                writer.flush()?;
+            }
+            Err(__) => {
+                error!("Execution reverted!",);
+                continue;
+            }
+        }
     }
     Ok(())
 }
