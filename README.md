@@ -10,3 +10,6 @@ Powered with async Rust and Tokio, this project can download data from Oracle da
 - Then run `cargo build` and `cargo run`
 
 Files should appear in project root directory in a format of `<ORACLE_NAME>_oracle_data.csv`
+
+## Run Tests
+- Run `cargo test`
