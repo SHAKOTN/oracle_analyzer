@@ -13,15 +13,16 @@ use web3::types::U256;
 mod constants;
 mod helpers;
 
-const DEPTH: u32 = 10000;
+// Max amount of rounds to fetch
+const DEPTH: u32 = 100000;
 
+/// Entry point for the application
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
     dotenv().ok();
     env_logger::init();
     let web3 =
         helpers::get_web3(std::env::var("ETHNODEURL").expect("ETHNODEURL must be set.")).unwrap();
-    // TODO: Candidate for concurrent approach
     for (oracle_name, address_str) in constants::ORACLE_ADDRESSES.into_iter() {
         let mut writer =
             Writer::from_path(format!("{oracle}_oracle_data.csv", oracle = oracle_name))?;
@@ -40,7 +41,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             address_str.parse().unwrap(),
             include_bytes!("./res/AggregatorCL.json"),
         )
-            .unwrap();
+        .unwrap();
         // Get latest round data
         let round_data: (U256, U256, U256, U256, U256) = contract
             .query("latestRoundData", (), None, Options::default(), None)
@@ -70,7 +71,8 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                 let future = Box::pin(helpers::get_round_data(*round, &contract));
                 futures.push(future);
             }
-            let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> = join_all(futures).await;
+            let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> =
+                join_all(futures).await;
             for result in results {
                 match result {
                     Ok(value) => {
@@ -84,7 +86,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
                         writer.flush()?;
                     }
                     Err(__) => {
-                        warn!("Execution reverted! Reached max debt for oracle",);
+                        warn!("Execution reverted!",);
                         execution_revert = true;
                         break;
                     }
