@@ -1,19 +1,19 @@
 #[macro_use]
 extern crate log;
 
+use std::error::Error as StdError;
+use std::iter::successors;
+
 use csv::Writer;
 use dotenv::dotenv;
 use futures::future::join_all;
-use std::error::Error as StdError;
-use std::iter::successors;
 use web3::contract::{Contract, Error, Options};
-use web3::transports::Http;
-use web3::types::{Address, U256};
+use web3::types::U256;
 
 mod constants;
 mod helpers;
 
-const DEPTH: u32 = 100000;
+const DEPTH: u32 = 100;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
@@ -34,11 +34,10 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             "answeredInRound",
         ])?;
         info!("Fetching Oracle data for {}", oracle_name);
-        let oracle_address: Address = address_str.parse().unwrap();
         // Instantiate the contract
         let contract = Contract::from_json(
             web3.eth(),
-            oracle_address,
+            address_str.parse().unwrap(),
             include_bytes!("./res/AggregatorCL.json"),
         )
         .unwrap();
@@ -64,7 +63,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         let mut futures = vec![];
         // Create futures for all the rounds
         for number in numbers {
-            let future = Box::pin(get_round_data(number, &contract));
+            let future = Box::pin(helpers::get_round_data(number, &contract));
             futures.push(future);
         }
         let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> = join_all(futures).await;
@@ -91,16 +90,3 @@ async fn main() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-/// Async get round data by number
-async fn get_round_data(
-    round_number: U256,
-    contract: &Contract<Http>,
-) -> Result<(U256, U256, U256, U256, U256), Error> {
-    let round_data: Result<(U256, U256, U256, U256, U256), Error> = contract
-        .query("getRoundData", round_number, None, Options::default(), None)
-        .await;
-    match round_data {
-        Ok(round_data) => Ok(round_data),
-        Err(error) => Err(error),
-    }
-}
