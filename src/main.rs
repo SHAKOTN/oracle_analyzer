@@ -3,9 +3,9 @@ extern crate log;
 
 use csv::Writer;
 use dotenv::dotenv;
+use futures::future::join_all;
 use std::error::Error as StdError;
 use std::iter::successors;
-use tokio::join;
 use web3::contract::{Contract, Error, Options};
 use web3::transports::Http;
 use web3::types::{Address, U256};
@@ -53,29 +53,35 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             round_data.4.to_string(),
         ])?;
         writer.flush()?;
-        let upper_bond = round_data.0 - 1;
-        let upper_bond_usize: usize = upper_bond.as_u128() as usize;
         // Generate how many rounds we want to fetch data for
-        let numbers: Vec<U256> = successors(Some(round_data.0 - 10000), |n| Some(n + 1))
-            .take(upper_bond_usize)
+        let numbers: Vec<U256> = successors(Some(round_data.0 - 1), |n| Some(n - 1))
+            .take(1000)
             .collect();
-        let latest_round = U256::from(round_data.0 - 1);
-        let (prev_round_result,) = join!(get_round_data(&latest_round, &contract));
-        match prev_round_result {
-            Ok(value) => {
-                info!("Fetched result succesfully!");
-                writer.write_record(&[
-                    value.0.to_string(),
-                    value.1.to_string(),
-                    value.2.to_string(),
-                    value.3.to_string(),
-                    value.4.to_string(),
-                ])?;
-                writer.flush()?;
-            }
-            Err(__) => {
-                error!("Execution reverted!",);
-                continue;
+        // Create dynamic array to collect futures
+        let mut futures = vec![];
+        // Create futures for all the rounds
+        for number in numbers {
+            let future = Box::pin(get_round_data(number, &contract));
+            futures.push(future);
+        }
+        let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> = join_all(futures).await;
+        for result in results {
+            match result {
+                Ok(value) => {
+                    info!("Fetched result succesfully!");
+                    writer.write_record(&[
+                        value.0.to_string(),
+                        value.1.to_string(),
+                        value.2.to_string(),
+                        value.3.to_string(),
+                        value.4.to_string(),
+                    ])?;
+                    writer.flush()?;
+                }
+                Err(__) => {
+                    error!("Execution reverted!",);
+                    continue;
+                }
             }
         }
     }
@@ -84,20 +90,14 @@ async fn main() -> Result<(), Box<dyn StdError>> {
 
 /// Async get round data by number
 async fn get_round_data(
-    round_number: &U256,
+    round_number: U256,
     contract: &Contract<Http>,
 ) -> Result<(U256, U256, U256, U256, U256), Error> {
     let round_data: Result<(U256, U256, U256, U256, U256), Error> = contract
-        .query("getRoundData", *round_number, None, Options::default(), None)
+        .query("getRoundData", round_number, None, Options::default(), None)
         .await;
     match round_data {
-        Ok(round_data) => {
-            info!("Fetched round data!");
-            Ok(round_data)
-        }
-        Err(error) => {
-            error!("Failed to fetch round data!");
-            Err(error)
-        }
+        Ok(round_data) => Ok(round_data),
+        Err(error) => Err(error),
     }
 }
