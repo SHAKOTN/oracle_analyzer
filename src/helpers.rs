@@ -39,6 +39,7 @@ mod tests {
     use web3::contract::Contract;
     use web3::transports::Http;
 
+    /// Helper function that generaes hex encoded string from a given sequence of numbers
     fn gen_hex_string(lst: Vec<u128>) -> String {
         let mut hex_string = String::new();
         for item in lst.iter() {
@@ -59,9 +60,10 @@ mod tests {
         let server = mockito::server_url();
         let _mock_transport = mockito::mock("POST", "/")
             .with_status(200)
-            .with_body(
-                format!(r#"{{"jsonrpc":"2.0","result":"{}","id":1}}"#, hex_string),
-            )
+            .with_body(format!(
+                r#"{{"jsonrpc":"2.0","result":"{}","id":1}}"#,
+                hex_string
+            ))
             .create();
 
         let mock_server_url = server.to_string();
@@ -71,12 +73,36 @@ mod tests {
             constants::ORACLE_ADDRESSES["ETH-BTC-CL"].parse().unwrap(),
             include_bytes!("./res/AggregatorCL.json"),
         )
-            .unwrap();
+        .unwrap();
         let round_data = get_round_data(1.into(), &contract).await.unwrap();
         assert_eq!(
             round_data,
             (1.into(), 2.into(), 3.into(), 4.into(), 5.into())
         );
+    }
+
+    /// Test that the get_round_data function returns an error when the returned data from Oracle
+    /// Is invalid
+    #[tokio::test]
+    async fn test_get_round_data_invalid_rpc_data() {
+        let server = mockito::server_url();
+        let _mock_transport = mockito::mock("POST", "/")
+            .with_status(200)
+            .with_body(r#"{"jsonrpc":"2.0","result":"BAD DATA","id":1}"#)
+            .create();
+
+        let mock_server_url = server.to_string();
+        let web3 = web3::Web3::new(Http::new(&mock_server_url).unwrap());
+        let contract = Contract::from_json(
+            web3.eth(),
+            constants::ORACLE_ADDRESSES["ETH-BTC-CL"].parse().unwrap(),
+            include_bytes!("./res/AggregatorCL.json"),
+        )
+        .unwrap();
+        let error = get_round_data(1.into(), &contract).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Api error: Decoder error: Error(\"invalid value: string \\\"BAD DATA\\\", expected 0x prefix\", line: 0, column: 0)");
     }
 
     #[test]
