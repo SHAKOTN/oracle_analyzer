@@ -13,7 +13,7 @@ use web3::types::U256;
 mod constants;
 mod helpers;
 
-const DEPTH: u32 = 100;
+const DEPTH: u32 = 10000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
             address_str.parse().unwrap(),
             include_bytes!("./res/AggregatorCL.json"),
         )
-        .unwrap();
+            .unwrap();
         // Get latest round data
         let round_data: (U256, U256, U256, U256, U256) = contract
             .query("latestRoundData", (), None, Options::default(), None)
@@ -56,35 +56,41 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         ])?;
         writer.flush()?;
         // Generate how many rounds we want to fetch data for
-        let numbers: Vec<U256> = successors(Some(round_data.0 - 1), |n| Some(n - 1))
+        let num_rounds: Vec<U256> = successors(Some(round_data.0 - 1), |n| Some(n - 1))
             .take(DEPTH as usize)
             .collect();
-        // Create dynamic array to collect futures
-        let mut futures = vec![];
-        // Create futures for all the rounds
-        for number in numbers {
-            let future = Box::pin(helpers::get_round_data(number, &contract));
-            futures.push(future);
-        }
-        let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> = join_all(futures).await;
-        for result in results {
-            match result {
-                Ok(value) => {
-                    info!("Fetched result succesfully!");
-                    writer.write_record(&[
-                        value.0.to_string(),
-                        value.1.to_string(),
-                        value.2.to_string(),
-                        value.3.to_string(),
-                        value.4.to_string(),
-                    ])?;
-                    writer.flush()?;
-                }
-                Err(__) => {
-                    error!("Execution reverted!",);
-                    continue;
+        let mut execution_revert = false;
+        let limit = 100;
+        let mut offset = 0;
+        while execution_revert != true {
+            // Create dynamic array to collect futures
+            let mut futures = vec![];
+            // Create futures for all the rounds
+            for round in &num_rounds[offset..(offset + limit)] {
+                let future = Box::pin(helpers::get_round_data(*round, &contract));
+                futures.push(future);
+            }
+            let results: Vec<Result<(U256, U256, U256, U256, U256), Error>> = join_all(futures).await;
+            for result in results {
+                match result {
+                    Ok(value) => {
+                        writer.write_record(&[
+                            value.0.to_string(),
+                            value.1.to_string(),
+                            value.2.to_string(),
+                            value.3.to_string(),
+                            value.4.to_string(),
+                        ])?;
+                        writer.flush()?;
+                    }
+                    Err(__) => {
+                        warn!("Execution reverted! Reached max debt for oracle",);
+                        execution_revert = true;
+                        break;
+                    }
                 }
             }
+            offset += limit;
         }
     }
     Ok(())
