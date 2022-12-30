@@ -13,11 +13,14 @@ use web3::types::{Address, U256};
 mod constants;
 mod helpers;
 
+const DEPTH: u32 = 100000;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError>> {
     dotenv().ok();
     env_logger::init();
-    let web3 = helpers::get_web3(std::env::var("ETHNODEURL").expect("ETHNODEURL must be set."));
+    let web3 =
+        helpers::get_web3(std::env::var("ETHNODEURL").expect("ETHNODEURL must be set.")).unwrap();
     // TODO: Candidate for concurrent approach
     for (oracle_name, address_str) in constants::ORACLE_ADDRESSES.into_iter() {
         let mut writer =
@@ -55,7 +58,7 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         writer.flush()?;
         // Generate how many rounds we want to fetch data for
         let numbers: Vec<U256> = successors(Some(round_data.0 - 1), |n| Some(n - 1))
-            .take(1000)
+            .take(DEPTH as usize)
             .collect();
         // Create dynamic array to collect futures
         let mut futures = vec![];
